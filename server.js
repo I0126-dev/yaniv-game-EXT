@@ -42,26 +42,12 @@ let gameState = {
   buttonIndex: 0,    
   status: 'lobby',   
   turnState: 'discard', 
-  rules: { x: 7, isAny: false, y: 1, z: 2, isChaos: false }, // ★isChaosフラグを追加
+  rules: { x: 7, isAny: false, y: 1, z: 2, isChaos: false },
   roundHistory: [],
-  isSimulating: false,
-  isFullAISim: false,
   reshuffleCount: 0,
   currentRoundNum: 1,
   roundResultData: null
 };
-
-let simStats = {
-  totalRounds: 0,
-  yanivSuccessCount: 0,
-  asafCount: 0,
-  maxPointsInRound: 0,
-  averageYanivScoreSum: 0,
-  totalDeclarations: 0,
-  aiWins: { 'AI-スティーブ': 0, 'AI-アリス': 0, 'AI-ボブ': 0, 'AI-キャロル': 0 }
-};
-
-let aiNextRoundTimer = null;
 
 function createDeck() {
   const suits = ['S', 'H', 'D', 'C'];
@@ -101,53 +87,6 @@ function getCardString(card) {
   return `${suits[card.suit]}${valStr}`;
 }
 
-function selectBestDiscard(hand) {
-  const jokers = hand.filter(c => c.value === 0);
-  const normalCards = hand.filter(c => c.value !== 0);
-  const valueGroups = {};
-  normalCards.forEach(c => {
-    if (!valueGroups[c.value]) valueGroups[c.value] = [];
-    valueGroups[c.value].push(c);
-  });
-  let bestSet = [];
-  let bestScore = -1;
-  Object.keys(valueGroups).forEach(val => {
-    const group = valueGroups[val];
-    if (group.length >= 2) {
-      const score = calculateHandScore(group, true);
-      if (score > bestScore) { bestScore = score; bestSet = [...group]; }
-    }
-  });
-  const suitGroups = { 'S': [], 'H': [], 'D': [], 'C': [] };
-  normalCards.forEach(c => suitGroups[c.suit].push(c));
-  Object.keys(suitGroups).forEach(suit => {
-    const cards = suitGroups[suit].sort((a, b) => a.value - b.value);
-    for (let i = 0; i < cards.length; i++) {
-      let seq = [cards[i]];
-      for (let j = i + 1; j < cards.length; j++) {
-        if (cards[j].value === seq[seq.length - 1].value + 1) { seq.push(cards[j]); }
-        else if (cards[j].value === seq[seq.length - 1].value) { continue; }
-        else { break; }
-      }
-      if (seq.length >= 3) {
-        const score = calculateHandScore(seq, true);
-        if (score > bestScore) { bestScore = score; bestSet = seq; }
-      }
-    }
-  });
-  if (jokers.length > 0 && bestSet.length > 0) { bestSet.push(jokers[0]); }
-  if (bestSet.length === 0) {
-    let highestCard = hand[0];
-    for (let c of hand) {
-      const cVal = c.value >= 10 ? 10 : (c.value === 0 ? 0 : c.value);
-      const hVal = highestCard.value >= 10 ? 10 : (highestCard.value === 0 ? 0 : highestCard.value);
-      if (cVal > hVal) { highestCard = c; }
-    }
-    bestSet = [highestCard];
-  }
-  return bestSet.map(c => c.id);
-}
-
 function startNewRound() {
   gameState.deck = createDeck();
   gameState.discardPile = [];
@@ -158,114 +97,6 @@ function startNewRound() {
   gameState.status = 'setting_rules';
   gameState.currentTurn = gameState.buttonIndex;
   io.emit('stateUpdate', gameState);
-  io.emit('statsUpdate', simStats);
-}
-
-function autoSetRules() {
-  if (gameState.status !== 'setting_rules') return;
-  const buttonPlayer = gameState.players[gameState.buttonIndex];
-  if (buttonPlayer && buttonPlayer.isAI) {
-    
-    let chosenX = 7;
-    let chosenAny = false;
-    if (Math.random() < 0.2) {
-      chosenAny = true;
-    } else {
-      const xOptions = [5, 6, 7, 8, 9, 10];
-      chosenX = xOptions[Math.floor(Math.random() * xOptions.length)];
-    }
-
-    const yOptions = [6, 7, 8, 9, 10];
-    let chosenY = yOptions[Math.floor(Math.random() * yOptions.length)];
-
-    const zOptions = [6, 7, 8, 9, 10];
-    let chosenZ = zOptions[Math.floor(Math.random() * zOptions.length)];
-
-    gameState.rules = { x: chosenX, isAny: chosenAny, y: chosenY, z: chosenZ, isChaos: false };
-    
-    const ruleLogText = chosenAny 
-      ? `親の ${buttonPlayer.name} が特殊ルール [Any (いつでもヤニブOK) / 通常${chosenY}倍 / 返し${chosenZ}倍] を宣告しました！`
-      : `親の ${buttonPlayer.name} がルール [X値: ${chosenX}点以下 / 通常${chosenY}倍 / 返し${chosenZ}倍] を設定しました。`;
-    io.emit('msgSend', { sender: "システム", text: ruleLogText });
-    
-    for (let player of gameState.players) {
-      for (let i = 0; i < 5; i++) { player.hand.push(gameState.deck.pop()); }
-    }
-
-    let firstCard = gameState.deck.pop();
-    while (firstCard.value === 0 || firstCard.value === 1) {
-      gameState.deck.push(firstCard);
-      for (let i = gameState.deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
-      }
-      firstCard = gameState.deck.pop();
-    }
-
-    gameState.discardPile.push(firstCard);
-    gameState.lastDiscardSet = [firstCard];
-    gameState.status = 'playing';
-    gameState.turnState = 'discard';
-    gameState.currentTurn = (gameState.buttonIndex + 1) % gameState.players.length;
-    io.emit('stateUpdate', gameState);
-    handleAIMove();
-  }
-}
-
-function handleAIMove() {
-  if (gameState.status !== 'playing' || !gameState.isSimulating) return;
-  const activePlayer = gameState.players[gameState.currentTurn];
-  if (!activePlayer || !activePlayer.isAI) return;
-  const delay = gameState.isFullAISim ? 300 : 800;
-
-  setTimeout(() => {
-    if (gameState.status !== 'playing') return;
-    if (gameState.turnState === 'discard') {
-      const score = calculateHandScore(activePlayer.hand, true);
-      const threshold = gameState.rules.isAny ? 10 : gameState.rules.x;
-      if (score <= threshold) {
-        executeYaniv(activePlayer.id);
-        return;
-      }
-
-      const discardIds = selectBestDiscard(activePlayer.hand);
-      gameState.pendingDiscard = [];
-      for (let id of discardIds) {
-        const idx = activePlayer.hand.findIndex(c => c.id === id);
-        if (idx !== -1) { gameState.pendingDiscard.push(activePlayer.hand.splice(idx, 1)[0]); }
-      }
-      gameState.turnState = 'draw';
-      io.emit('stateUpdate', gameState);
-      handleAIMove();
-    } 
-    else if (gameState.turnState === 'draw') {
-      let drawSource = 'deck';
-      let drawCardId = null;
-      const lastSet = gameState.lastDiscardSet || [];
-      if (lastSet.length > 0) {
-        const playableIndices = [];
-        if (lastSet.length <= 2) { lastSet.forEach((_, idx) => playableIndices.push(idx)); } 
-        else { playableIndices.push(0, lastSet.length - 1); }
-        for (let idx of playableIndices) {
-          const card = lastSet[idx];
-          if (card && card.value > 0 && card.value <= 4) {
-            drawSource = 'discard'; drawCardId = card.id; break;
-          }
-        }
-      }
-      let drawnCard;
-      if (drawSource === 'discard' && drawCardId) {
-        const idx = gameState.discardPile.findIndex(c => c.id === drawCardId);
-        if (idx !== -1) { drawnCard = gameState.discardPile.splice(idx, 1)[0]; } 
-        else { drawnCard = gameState.deck.pop(); }
-      } else {
-        drawnCard = gameState.deck.pop();
-      }
-      activePlayer.hand.push(drawnCard);
-      
-      processDrawEnd();
-    }
-  }, delay);
 }
 
 function processDrawEnd() {
@@ -311,7 +142,6 @@ function processDrawEnd() {
   gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
   gameState.turnState = 'discard';
   io.emit('stateUpdate', gameState);
-  if (gameState.isSimulating) { handleAIMove(); }
 }
 
 function executeYaniv(socketId) {
@@ -331,7 +161,7 @@ function executeYaniv(socketId) {
       name: p.name,
       handDetails: p.hand.map(c => getCardString(c)).join(', '),
       rawScore: calculateHandScore(p.hand, isDecl),
-      isAI: p.isAI,
+      isAI: false,
       isDeclarer: isDecl,
       finalEarned: 0
     };
@@ -347,23 +177,13 @@ function executeYaniv(socketId) {
   let summaryTitle = "";
   let summaryDesc = "";
 
-  simStats.totalRounds += 1;
-  simStats.totalDeclarations += 1;
-  simStats.averageYanivScoreSum += declarerScore;
-
   io.emit('yanivAlert', { announcer: declarer.name, isReturned: isYanivReturned });
 
   if (!isYanivReturned) {
-    const targetNode = gameState.players.find(p => p.id === declarer.id);
     reward = (maxScore - minScore) * gameState.rules.y;
-    targetNode.score = reward;
+    declarer.score = reward;
     getterName = declarer.name;
-    
     playerScoresData.find(s => s.id === declarer.id).finalEarned = reward;
-    simStats.yanivSuccessCount += 1;
-    if (simStats.aiWins[getterName] !== undefined) {
-      simStats.aiWins[getterName] += 1;
-    }
     summaryTitle = `🎉 ${declarer.name} のヤニブ成功！`;
     summaryDesc = `手札点数 ${declarerScore}点 で安全に逃げ切りました。ゲッター報酬として [${reward} pt] を獲得します。`;
   } else {
@@ -374,31 +194,20 @@ function executeYaniv(socketId) {
     getterName = bestRival.name;
 
     playerScoresData.find(s => s.id === bestRival.id).finalEarned = reward;
-    simStats.asafCount += 1;
-    if (simStats.aiWins[getterName] !== undefined) {
-      simStats.aiWins[getterName] += 1;
-    }
     summaryTitle = `⚡ ヤニブ返し発生！阻止成功！`;
     summaryDesc = `${declarer.name} の宣言ラインを、さらに低い手札（${bestRival.rawScore}点）の ${bestRival.name} が迎撃！ペナルティ倍率が適用され、${bestRival.name} が [${reward} pt] を強奪しました。`;
   }
 
-  // カオスモードで超特大点数が出た場合のためのログ補記
   if (gameState.rules && gameState.rules.isChaos) {
     summaryDesc += ` (※カオスモードの確定倍率: 通常${gameState.rules.y}倍 / 返し${gameState.rules.z}倍でした！ )`;
   }
 
-  if (reward > simStats.maxPointsInRound) { simStats.maxPointsInRound = reward; }
-
-  if (!gameState.isSimulating) {
-    const db = loadPlayerDb();
-    gameState.players.forEach(p => {
-      if (!p.isAI) {
-        db[p.name] = (db[p.name] || 0) + p.score;
-        p.savedTotalScore = db[p.name];
-      }
-    });
-    savePlayerDb(db);
-  }
+  const db = loadPlayerDb();
+  gameState.players.forEach(p => {
+    db[p.name] = (db[p.name] || 0) + p.score;
+    p.savedTotalScore = db[p.name];
+  });
+  savePlayerDb(db);
 
   gameState.roundResultData = {
     roundNumber: gameState.currentRoundNum,
@@ -412,7 +221,7 @@ function executeYaniv(socketId) {
         name: ps.name,
         handDetails: ps.handDetails,
         rawScore: ps.rawScore,
-        isAI: ps.isAI,
+        isAI: false,
         isDeclarer: ps.isDeclarer,
         isGetter: ps.name === getterName,
         finalEarned: ps.finalEarned,
@@ -425,26 +234,7 @@ function executeYaniv(socketId) {
   gameState.roundHistory = []; 
   gameState.status = 'round_end';
   
-  io.emit('statsUpdate', simStats);
   io.emit('stateUpdate', gameState);
-
-  if (gameState.isSimulating) {
-    const transitionDelay = gameState.isFullAISim ? 1200 : 3000;
-    
-    if (aiNextRoundTimer) clearTimeout(aiNextRoundTimer);
-
-    aiNextRoundTimer = setTimeout(() => {
-      if (!gameState.isSimulating || gameState.status !== 'round_end') return;
-      
-      gameState.currentRoundNum += 1; 
-      gameState.buttonIndex = (gameState.buttonIndex + 1) % gameState.players.length;
-      startNewRound();
-      
-      setTimeout(() => { 
-        autoSetRules(); 
-      }, 500);
-    }, transitionDelay);
-  }
 }
 
 function removePlayerFromGame(targetId) {
@@ -461,10 +251,7 @@ function removePlayerFromGame(targetId) {
   gameState.players.splice(pIndex, 1);
 
   if (gameState.players.length === 0) {
-    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     gameState.status = 'lobby';
-    gameState.isSimulating = false;
-    gameState.isFullAISim = false;
     gameState.currentRoundNum = 1;
     io.emit('stateUpdate', gameState);
     return;
@@ -478,7 +265,6 @@ function removePlayerFromGame(targetId) {
   }
 
   io.emit('stateUpdate', gameState);
-  if (gameState.status === 'playing' && gameState.isSimulating) { handleAIMove(); }
 }
 
 io.on('connection', (socket) => {
@@ -486,57 +272,6 @@ io.on('connection', (socket) => {
 
   socket.on('msgSend', (data) => {
     io.emit('msgReceive', { sender: data.sender, text: data.text });
-  });
-
-  socket.on('startFullAISimMode', () => {
-    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
-    simStats = {
-      totalRounds: 0, yanivSuccessCount: 0, asafCount: 0, maxPointsInRound: 0,
-      averageYanivScoreSum: 0, totalDeclarations: 0,
-      aiWins: { 'AI-スティーブ': 0, 'AI-アリス': 0, 'AI-ボブ': 0, 'AI-キャロル': 0 }
-    };
-    gameState.players = [];
-    gameState.status = 'lobby';
-    gameState.isSimulating = true;
-    gameState.isFullAISim = true;
-    gameState.currentRoundNum = 1;
-
-    const aiNames = ['AI-スティーブ', 'AI-アリス', 'AI-ボブ', 'AI-キャロル'];
-    aiNames.forEach((name, idx) => {
-      gameState.players.push({ id: `AI-ID-${idx}`, name: name, hand: [], score: 0, isAI: true });
-    });
-    gameState.buttonIndex = 0;
-    startNewRound();
-    setTimeout(() => { autoSetRules(); }, 500);
-  });
-
-  socket.on('startSimMode', () => {
-    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
-    gameState.players = [];
-    gameState.status = 'lobby';
-    gameState.isSimulating = true;
-    gameState.isFullAISim = false;
-    gameState.currentRoundNum = 1;
-
-    const aiNames = ['AI-スティーブ', 'AI-アリス', 'AI-ボブ', 'AI-キャロル'];
-    aiNames.forEach((name, idx) => {
-      gameState.players.push({ id: `AI-ID-${idx}`, name: name, hand: [], score: 0, isAI: true });
-    });
-    gameState.players.push({ id: socket.id, name: 'あなた（見学・介入可能）', hand: [], score: 0, isAI: false });
-    gameState.buttonIndex = 0;
-    startNewRound();
-    setTimeout(() => { autoSetRules(); }, 1000);
-  });
-
-  socket.on('stopSimulation', () => {
-    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
-    gameState.isSimulating = false;
-    gameState.isFullAISim = false;
-    gameState.status = 'lobby';
-    gameState.players = [];
-    gameState.currentRoundNum = 1;
-    io.emit('stateUpdate', gameState);
-    io.emit('dbUpdate', loadPlayerDb());
   });
 
   socket.on('leavePlayerAction', () => {
@@ -548,7 +283,7 @@ io.on('connection', (socket) => {
     const emptyDb = {};
     savePlayerDb(emptyDb);
     io.emit('dbUpdate', emptyDb);
-    gameState.players.forEach(p => { if (!p.isAI) p.savedTotalScore = 0; });
+    gameState.players.forEach(p => { p.savedTotalScore = 0; });
     io.emit('stateUpdate', gameState);
   });
 
@@ -571,7 +306,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('setRules', (rules) => {
-    // ★カオスモードか手動入力かで数値を分岐決定する処理
     if (rules.isChaos) {
       let randX = 7;
       let randAny = false;
@@ -581,19 +315,17 @@ io.on('connection', (socket) => {
         const xList = [3, 4, 5, 6, 7, 8, 9, 10];
         randX = xList[Math.floor(Math.random() * xList.length)];
       }
-      const randY = Math.floor(Math.random() * 20) + 1; // 1〜20
-      const randZ = Math.floor(Math.random() * 20) + 1; // 1〜20
+      const randY = Math.floor(Math.random() * 20) + 1; 
+      const randZ = Math.floor(Math.random() * 20) + 1; 
 
       gameState.rules = { x: randX, isAny: randAny, y: randY, z: randZ, isChaos: true };
 
-      // カオス発動時のチャットアナウンス
       const announcer = gameState.players.find(p => p.id === socket.id);
       io.emit('msgSend', { 
         sender: "システム", 
         text: `⚠️ 親の ${announcer ? announcer.name : '誰か'} が【カオスモード（完全ランダム）】を発動！ 宣言条件は [${randAny ? 'Any' : randX + '点以下'}] です。倍率は勝負がつくまで非表示となります！` 
       });
     } else {
-      // 通常の手動設定入力時
       gameState.rules = {
         x: parseInt(rules.x) || 7,
         isAny: !!rules.isAny,
@@ -625,7 +357,6 @@ io.on('connection', (socket) => {
     gameState.turnState = 'discard';
     gameState.currentTurn = (gameState.buttonIndex + 1) % gameState.players.length;
     io.emit('stateUpdate', gameState);
-    handleAIMove();
   });
 
   socket.on('discardCards', (data) => {
