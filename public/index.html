@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ヤニブ・オンライン (データ検証ダッシュボード搭載)</title>
+  <title>ヤニブ・オンライン (完全版)</title>
   <style>
     body {
       font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -27,14 +27,19 @@
       text-shadow: 0 2px 4px rgba(0,0,0,0.5);
       margin-bottom: 10px;
     }
-    .lobby-box, .rule-box, .result-box {
+    .lobby-box, .rule-box, .result-box, .prestart-box {
       background: rgba(0, 0, 0, 0.7);
       padding: 30px;
       border-radius: 12px;
       border: 2px solid #ffb300;
-      max-width: 600px;
+      max-width: 650px;
       margin: 40px auto;
       text-align: center;
+    }
+    .result-box {
+      max-width: 800px;
+      border-color: #00f0ff;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
     }
     input[type="text"], input[type="number"] {
       padding: 10px;
@@ -58,7 +63,6 @@
     .btn:hover { background: #e68a00; }
     .btn:disabled { background: #555; cursor: not-allowed; }
 
-    /* 左右のレイアウト分割 */
     .game-layout {
       display: flex;
       gap: 20px;
@@ -67,230 +71,186 @@
       flex-wrap: wrap;
       margin-top: 15px;
     }
+    .main-board { flex: 1; min-width: 650px; }
+    .side-panels { display: flex; flex-direction: column; gap: 20px; width: 320px; }
+    
+    .dashboard-panel, .chat-panel {
+      background: rgba(0,0,0,0.85); border: 2px solid #e91e63;
+      border-radius: 12px; padding: 15px; box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+    }
+    .chat-panel { border-color: #00c853; }
+    .dashboard-panel h2, .chat-panel h2 {
+      margin-top: 0; color: #e91e63; font-size: 1.25rem;
+      border-bottom: 1px solid #555; padding-bottom: 8px; text-align: center;
+    }
+    .chat-panel h2 { color: #00c853; }
 
-    /* メインエリア */
-    .main-board {
-      flex: 1;
-      min-width: 650px;
-    }
-
-    /* ★【新規】ダッシュボードパネル */
-    .dashboard-panel {
-      width: 320px;
-      background: rgba(0,0,0,0.85);
-      border: 2px solid #e91e63;
-      border-radius: 12px;
-      padding: 15px;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.6);
-    }
-    .dashboard-panel h2 {
-      margin-top: 0;
-      color: #e91e63;
-      font-size: 1.25rem;
-      border-bottom: 1px solid #555;
-      padding-bottom: 8px;
-      text-align: center;
-    }
     .stat-row {
-      display: flex;
-      justify-content: space-between;
-      margin: 10px 0;
-      font-size: 0.95rem;
-      border-bottom: 1px dashed #333;
-      padding-bottom: 4px;
+      display: flex; justify-content: space-between;
+      margin: 10px 0; font-size: 0.95rem; border-bottom: 1px dashed #333; padding-bottom: 4px;
     }
-    .stat-val {
-      font-weight: bold;
-      color: #00f0ff;
+    .stat-val { font-weight: bold; color: #00f0ff; }
+
+    .chat-log {
+      height: 180px; overflow-y: auto; background: #080f0a;
+      border-radius: 6px; padding: 8px; font-size: 0.9rem;
+      line-height: 1.4; margin-bottom: 10px; text-align: left;
     }
+    .chat-input-row { display: flex; gap: 5px; }
 
     .table-area {
-      position: relative;
-      background: radial-gradient(circle, #2d5a36 0%, #17351c 100%);
-      border: 15px solid #5a3825;
-      border-radius: 150px;
-      height: 480px;
+      position: relative; background: radial-gradient(circle, #2d5a36 0%, #17351c 100%);
+      border: 15px solid #5a3825; border-radius: 150px; height: 480px;
       box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 10px 20px rgba(0,0,0,0.5);
     }
-    
     .player-node {
-      position: absolute;
-      background: rgba(0,0,0,0.85);
-      border: 2px solid #aaa;
-      border-radius: 8px;
-      padding: 8px 12px;
-      text-align: center;
-      width: 140px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      transform: translate(-50%, -50%);
+      position: absolute; background: rgba(0,0,0,0.85); border: 2px solid #aaa;
+      border-radius: 8px; padding: 8px 12px; text-align: center; width: 140px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3); transform: translate(-50%, -50%);
     }
-    .player-node.active {
-      border-color: #00ffcc;
-      box-shadow: 0 0 15px #00ffcc;
-    }
+    .player-node.active { border-color: #00ffcc; box-shadow: 0 0 15px #00ffcc; }
     .player-node.dealer::after {
-      content: 'D';
-      position: absolute;
-      top: -10px;
-      right: -10px;
-      background: #ffeb3b;
-      color: black;
-      font-weight: bold;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      line-height: 22px;
-      font-size: 0.8rem;
-      border: 1px solid black;
+      content: 'D'; position: absolute; top: -10px; right: -10px; background: #ffeb3b;
+      color: black; font-weight: bold; width: 22px; height: 22px; border-radius: 50%;
+      line-height: 22px; font-size: 0.8rem; border: 1px solid black;
     }
 
     .center-pile {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      display: flex;
-      gap: 30px;
-      align-items: center;
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; gap: 30px; align-items: center;
     }
     .deck-pile {
-      background: #900;
-      color: white;
-      border: 2px solid #ff4444;
-      border-radius: 8px;
-      width: 65px;
-      height: 95px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-weight: bold;
-      cursor: pointer;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+      background: #900; color: white; border: 2px solid #ff4444; border-radius: 8px;
+      width: 65px; height: 95px; display: flex; justify-content: center; align-items: center;
+      font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.4);
     }
-    .deck-pile.active-draw {
-      border-color: #ffeb3b;
-      box-shadow: 0 0 15px #ffeb3b;
-    }
-
+    .deck-pile.active-draw { border-color: #ffeb3b; box-shadow: 0 0 15px #ffeb3b; }
     .discard-container {
-      display: flex;
-      gap: 5px;
-      background: rgba(0,0,0,0.4);
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px dashed #777;
+      display: flex; gap: 5px; background: rgba(0,0,0,0.4); padding: 8px;
+      border-radius: 8px; border: 1px dashed #777;
     }
 
     .card-area { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     .card {
-      position: relative;
-      background: white;
-      color: black;
-      border-radius: 6px;
-      width: 60px;
-      height: 90px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 5px;
-      box-sizing: border-box;
-      font-weight: bold;
-      font-size: 1.1rem;
-      cursor: pointer;
-      border: 2px solid #ccc;
-      user-select: none;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s, border-color 0.2s;
+      position: relative; background: white; color: black; border-radius: 6px;
+      width: 60px; height: 90px; display: flex; flex-direction: column; justify-content: space-between;
+      padding: 5px; box-sizing: border-box; font-weight: bold; font-size: 1.1rem; cursor: pointer;
+      border: 2px solid #ccc; user-select: none; box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+      transition: transform 0.2s, box-shadow 0.2s;
     }
     .card.red { color: #d32f2f; }
     .card.joker { color: #7b1fa2; }
-    
     body .card-area .card.selected {
-      border: 3px solid #00f0ff !important;
-      transform: translateY(-25px) scale(1.1);
-      box-shadow: 0 15px 30px rgba(0, 240, 255, 0.8), 0 0 20px rgba(0, 240, 255, 0.6) !important;
-      background: #e6ffff !important;
+      border: 3px solid #00f0ff !important; transform: translateY(-25px) scale(1.1);
+      box-shadow: 0 15px 30px rgba(0, 240, 255, 0.8) !important; background: #e6ffff !important;
     }
-
     .select-badge {
-      position: absolute;
-      top: -12px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #00f0ff;
-      color: black;
-      font-size: 0.75rem;
-      font-weight: bold;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      text-align: center;
-      line-height: 18px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      z-index: 10;
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: #00f0ff; color: black; font-size: 0.75rem; font-weight: bold;
+      width: 18px; height: 18px; border-radius: 50%; text-align: center; line-height: 18px;
     }
+    .card.playable-discard { border: 3px solid #ffeb3b !important; box-shadow: 0 0 15px #ffeb3b !important; }
+    .card.unplayable-discard { opacity: 0.3; cursor: not-allowed !important; }
 
-    .card.playable-discard {
-      border: 3px solid #ffeb3b !important;
-      box-shadow: 0 0 15px #ffeb3b !important;
-      transform: translateY(-5px);
-    }
-    .card.unplayable-discard {
-      opacity: 0.3;
-      cursor: not-allowed !important;
-    }
+    .my-panel { background: rgba(0,0,0,0.6); border-radius: 10px; padding: 15px; margin-top: 20px; text-align: center; }
+    .control-row { margin-top: 15px; display: flex; justify-content: center; gap: 15px; }
+    .rule-badge { background: #333; padding: 6px 12px; border-radius: 15px; font-size: 0.9rem; display: inline-block; margin: 5px; color: #ffb300; font-weight: bold; border: 1px solid #555; }
 
-    .my-panel {
-      background: rgba(0,0,0,0.6);
-      border-radius: 10px;
-      padding: 15px;
-      margin-top: 20px;
-      text-align: center;
+    .yaniv-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 9999;
+      opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
     }
-    .control-row {
-      margin-top: 15px;
-      display: flex;
-      justify-content: center;
-      gap: 15px;
+    .yaniv-overlay.show { opacity: 1; }
+    .yaniv-banner {
+      font-size: 5rem; font-weight: bold; color: #ffb300;
+      text-shadow: 0 0 30px #ffb300, 0 4px 10px rgba(0,0,0,0.9);
+      transform: scale(0.5); transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    .rule-badge {
-      background: #333;
-      padding: 6px 12px;
-      border-radius: 15px;
-      font-size: 0.9rem;
-      border: 1px solid #555;
-      display: inline-block;
-      margin: 5px;
+    .yaniv-overlay.show .yaniv-banner { transform: scale(1); }
+    .yaniv-subtext { font-size: 2rem; color: #fff; margin-top: 20px; font-weight: bold; }
+
+    .round-badge-ui {
+      background: linear-gradient(135deg, #00f0ff 0%, #0072ff 100%);
+      color: black; font-weight: bold; padding: 6px 16px; border-radius: 20px;
+      font-size: 1.2rem; display: inline-block; box-shadow: 0 4px 10px rgba(0,240,255,0.4);
+      margin-bottom: 15px;
+    }
+    .res-table {
+      width: 100%; border-collapse: collapse; margin: 15px 0; text-align: left;
+      font-size: 0.95rem; background: rgba(255,255,255,0.03); border-radius: 8px; overflow: hidden;
+    }
+    .res-table th {
+      background: #1a2922; padding: 12px; color: #00f0ff; border-bottom: 2px solid #333; font-weight: bold;
+    }
+    .res-table td { padding: 12px; border-bottom: 1px solid #222; vertical-align: middle; }
+    .res-table tr:hover { background: rgba(255,255,255,0.06); }
+    
+    .row-badge {
+      font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; display: inline-block; margin-left: 5px;
+    }
+    .badge-decl { background: #ff9800; color: black; }
+    .badge-getter { background: #00c853; color: black; box-shadow: 0 0 10px rgba(0,200,83,0.5); }
+    
+    .sys-log-box {
+      background: #080f0a; border: 1px solid #222; font-family: monospace;
+      padding: 10px; border-radius: 6px; font-size: 0.85rem; line-height: 1.5;
+      text-align: left; color: #888; max-height: 110px; overflow-y: auto; margin-top: 15px;
     }
   </style>
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+  <div id="yaniv-screen-alert" class="yaniv-overlay">
+    <div id="yaniv-banner-text" class="yaniv-banner">YANIV !!</div>
+    <div id="yaniv-sub-text" class="yaniv-subtext">プレイヤーが宣言しました</div>
+  </div>
+
   <div class="container">
     <h1>Yaniv Online</h1>
 
     <!-- 1. ロビー画面 -->
     <div id="lobby" class="lobby-box">
-      <h2>プレイヤー登録</h2>
+      <h2>プレイヤー登録 (アカウント保存対応)</h2>
+      <p style="font-size:0.85rem; color:#aaa; margin-top:-10px;">※同じニックネームを入力すると過去の保存ポイントを引き継げます</p>
       <input type="text" id="username" placeholder="ニックネームを入力">
       <br>
       <button class="btn" onclick="join()">ロビーに参加</button>
-      <button class="btn" id="start-btn" onclick="startGame()" style="display:none; margin-left: 10px;">通常ゲーム開始</button>
       
-      <!-- AIシミュレーション各種ボタン -->
       <hr style="margin:20px 0; border-color: #ffb300;">
-      <p style="font-size: 0.9rem; color: #ccc;">配札、役判定、勝率、ヤニブ返し比率などのデータ検証用：</p>
-      <button class="btn" onclick="startSimulation(false)" style="background: #e91e63; width: 85%; margin-bottom:10px;">🤖 AI自動対戦（あなたも混ざって遊べる・介入可能）</button>
-      <button class="btn" onclick="startSimulation(true)" style="background: #9c27b0; width: 85%;">📊 完全自動AI対戦 ＆ 統計リアルタイム観測モード</button>
+      <p style="font-size: 0.9rem; color: #ccc;">配札・役判定などのデータバランス検証用：</p>
+      <button class="btn" onclick="startSimulation(false)" style="background: #e91e63; width: 85%; margin-bottom:10px;">🤖 AI自動対戦（介入・見学プレイ）</button>
+      <button class="btn" onclick="startSimulation(true)" style="background: #9c27b0; width: 85%;">📊 完全自動AI対戦 ＆ 統計リアルタイム観選モード</button>
+
+      <div style="margin-top: 25px; text-align: left; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom:1px solid #444; padding-bottom:5px; margin-bottom: 10px;">
+          <h3 style="margin:0; color:#ffb300; font-size:1rem;">🏆 登録プレイヤー累積ランキング</h3>
+          <button onclick="resetPoints()" style="background:#555; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:0.75rem; cursor:pointer; font-weight:bold;">データリセット</button>
+        </div>
+        <div id="db-ranking-list" style="font-size:0.9rem; line-height:1.6; color:#ddd;">データがありません</div>
+      </div>
+    </div>
+
+    <!-- 参加者確認リスト表示エリア -->
+    <div id="pre-start-screen" class="prestart-box" style="display: none;">
+      <h2 style="color:#ffb300;">⚔️ 対戦エントリーメンバー ⚔️</h2>
+      <p style="color:#aaa;">現在の参加プレイヤーと持ち点一覧です。</p>
+      <div id="pre-start-list" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:8px; text-align:left; font-size:1.1rem; line-height:2; margin: 20px 0;"></div>
+      <div style="display:flex; gap:10px; justify-content:center;">
+        <button class="btn" onclick="confirmPreStart()" style="background:#00c853; flex:1; font-size:1.1rem;">全員揃ったのでゲームを開始する</button>
+        <button class="btn" onclick="leavePlayer()" style="background:#555; font-size:1.1rem;">抜ける</button>
+      </div>
     </div>
 
     <!-- 2. ルール設定画面 -->
     <div id="rule-setting" class="rule-box" style="display: none;">
       <h2>あなたが今回の親(D)です！</h2>
       <p>このラウンドのルールを設定してください：</p>
-      <div style="margin: 15px 0;">
+      <div style="margin: 15px 0; display:flex; justify-content:center; align-items:center; gap:10px;">
         <label>【X値】ヤニブ宣言ライン: </label>
-        <input type="number" id="rule-x" value="7" style="width: 60px; text-align: center;"> 点以下
+        <input type="number" id="rule-x" value="7" style="width: 60px; text-align: center; margin-bottom:0;"> 点以下
+        <button id="any-rule-btn" onclick="toggleAnyRule()" style="background:#555; border:1px solid #777; color:#fff; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">Any (いつでもOK)</button>
       </div>
       <div style="margin: 15px 0;">
         <label>【Y倍】通常時ゲッター倍率: </label>
@@ -300,36 +260,57 @@
         <label>【Z倍】ヤニブ返し倍率: </label>
         <input type="number" id="rule-z" value="2" style="width: 60px; text-align: center;"> 倍
       </div>
-      <button class="btn" onclick="submitRules()">ルールを確定して配札</button>
+      <div style="display:flex; gap:10px; justify-content:center;">
+        <button class="btn" onclick="submitRules()" style="flex:1;">ルールを確定して配札</button>
+        <button class="btn" onclick="leavePlayer()" style="background:#555;">退出</button>
+      </div>
     </div>
 
-    <!-- 3. ゲームリザルト画面 -->
+    <!-- 3. ラウンドリザルト画面UI -->
     <div id="round-result" class="result-box" style="display: none;">
-      <h2>ラウンド結果</h2>
-      <div id="result-log" style="text-align: left; margin: 15px 0; font-family: monospace; font-size: 1.1rem; line-height: 1.8; white-space: pre-wrap; background: #0c120e; padding: 15px; border-radius: 6px;"></div>
-      <button class="btn" id="next-btn" onclick="nextRound()">次のラウンドへ</button>
+      <div id="round-number-tag" class="round-badge-ui">ROUND 1</div>
+      
+      <h2 id="result-summary-title" style="color:#ffb300; margin-top:10px; font-size:1.6rem;">🎉 誰かのヤニブ成功！</h2>
+      <p id="result-summary-desc" style="color:#ccc; font-size:1.05rem; padding:0 15px; line-height:1.5;"></p>
+      
+      <table class="res-table">
+        <thead>
+          <tr>
+            <th style="width: 25%;">プレイヤー</th>
+            <th style="width: 45%;">開示された手札</th>
+            <th style="width: 15%; text-align:center;">手札点数</th>
+            <th style="width: 15%; text-align:right;">今回獲得点</th>
+          </tr>
+        </thead>
+        <tbody id="result-table-body"></tbody>
+      </table>
+
+      <div id="result-system-logs" class="sys-log-box"></div>
+
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:25px;">
+        <button class="btn" id="next-btn" onclick="nextRound()" style="flex:1; font-size:1.2rem; background: linear-gradient(135deg, #ff9800, #ff5722);">次のラウンドへ進む ➔</button>
+        <button class="btn" onclick="leavePlayer()" style="background:#444;">退出してロビーへ</button>
+      </div>
       <p id="sim-wait-msg" style="color:#ffb300; display:none; font-size: 0.9rem; margin-top:10px;">※シミュレーション中につき自動進行します...</p>
     </div>
 
-    <!-- 4. メインのポーカー卓 ＆ 統計ダッシュボードのレイアウト -->
+    <!-- 4. メインのゲーム卓 ＆ サイドパネル -->
     <div id="game-board" style="display: none;" class="game-layout">
       
-      <!-- メインのゲーム卓 -->
       <div class="main-board">
         <div style="text-align: center; margin-bottom: 10px;">
-          <span class="rule-badge" id="badge-x">X(宣言): 7以下</span>
-          <span class="rule-badge" id="badge-y">Y(通常): 1倍</span>
-          <span class="rule-badge" id="badge-z">Z(返し): 2倍</span>
-          <span class="rule-badge" id="sim-badge" style="background:#e91e63; display:none; font-weight:bold;">🤖 SIMULATION ACTIVE</span>
+          <span class="rule-badge" id="badge-x">X(宣言): -</span>
+          <span class="rule-badge" id="badge-y">Y(通常): -</span>
+          <span class="rule-badge" id="badge-z">Z(返し): -</span>
+          <span class="rule-badge" id="sim-badge" style="background:#e91e63; display:none; font-weight:bold; color:white;">🤖 SIMULATION ACTIVE</span>
+          <button class="btn" id="sim-top-exit-btn" onclick="leavePlayer()" style="background:#d50000; padding:4px 12px; font-size:0.85rem; display:inline-block; margin-left:10px;">🚪 試合から途中離脱する</button>
         </div>
 
         <div class="table-area" id="table-canvas">
           <div class="center-pile">
             <div>
               <div style="font-size:0.8rem; text-align:center; margin-bottom:4px; font-weight: bold; color: #ffeb3b;">山札</div>
-              <div class="deck-pile" id="deck-node" onclick="drawFromDeck()">
-                裏面
-              </div>
+              <div class="deck-pile" id="deck-node" onclick="drawFromDeck()">裏面</div>
             </div>
             <div>
               <div style="font-size:0.8rem; text-align:center; margin-bottom:4px; font-weight: bold; color: #ffeb3b;">捨て札 (直前セット)</div>
@@ -349,33 +330,26 @@
         </div>
       </div>
 
-      <!-- ★【新規追加】リアルタイム統計ダッシュボード -->
-      <div class="dashboard-panel" id="dashboard-panel">
-        <h2>📊 データ分析ダッシュボード</h2>
-        <div class="stat-row">
-          <span>総ラウンド数</span>
-          <span class="stat-val" id="stat-total-rounds">0</span>
-        </div>
-        <div class="stat-row">
-          <span>ヤニブ成功率</span>
-          <span class="stat-val" id="stat-yaniv-rate">0.0 %</span>
-        </div>
-        <div class="stat-row">
-          <span>ヤニブ返し(アサフ)率</span>
-          <span class="stat-val" style="color:#ff3366;" id="stat-asaf-rate">0.0 %</span>
-        </div>
-        <div class="stat-row">
-          <span>宣言時平均手札点数</span>
-          <span class="stat-val" id="stat-avg-score">0.0 点</span>
-        </div>
-        <div class="stat-row">
-          <span>一撃最高獲得点</span>
-          <span class="stat-val" style="color:#ffb300;" id="stat-max-points">0 pt</span>
+      <!-- 右側サイドパネル群 -->
+      <div class="side-panels">
+        <div class="dashboard-panel" id="dashboard-panel">
+          <h2>📊 データ分析ダッシュボード</h2>
+          <div class="stat-row"><span>総ラウンド数</span><span class="stat-val" id="stat-total-rounds">0</span></div>
+          <div class="stat-row"><span>ヤニブ成功率</span><span class="stat-val" id="stat-yaniv-rate">0.0 %</span></div>
+          <div class="stat-row"><span>ヤニブ返し(アサフ)率</span><span class="stat-val" style="color:#ff3366;" id="stat-asaf-rate">0.0 %</span></div>
+          <div class="stat-row"><span>宣言時平均手札点数</span><span class="stat-val" id="stat-avg-score">0.0 点</span></div>
+          <div class="stat-row"><span>一撃最高獲得点</span><span class="stat-val" style="color:#ffb300;" id="stat-max-points">0 pt</span></div>
+          <h3 style="color:#e91e63; font-size:1.1rem; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:20px; text-align:center;">🏆 AIプレイヤー勝数</h3>
+          <div id="ai-wins-list"></div>
         </div>
 
-        <h3 style="color:#e91e63; font-size:1.1rem; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:20px; text-align:center;">🏆 AIプレイヤー勝数</h3>
-        <div id="ai-wins-list">
-          <!-- 動的に追加 -->
+        <div class="chat-panel" id="chat-panel">
+          <h2>💬 リアルタイムコメント</h2>
+          <div class="chat-log" id="chat-log-box"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input-text" placeholder="メッセージを入力..." style="width:75%; margin-bottom:0; padding:8px; font-size:0.95rem;" onkeydown="if(event.key==='Enter') sendChatMessage()">
+            <button class="btn" onclick="sendChatMessage()" style="padding:8px 14px; font-size:0.95rem; background:#00c853;">送信</button>
+          </div>
         </div>
       </div>
 
@@ -387,62 +361,113 @@
     let myId = null;
     let gameState = null;
     let selectedCardsList = [];
+    let myNameStr = "ゲスト";
+    let isAnyRuleSelected = false;
 
     socket.on('connect', () => { myId = socket.id; });
+    
+    socket.on('msgReceive', (data) => {
+      const box = document.getElementById('chat-log-box');
+      const msgEl = document.createElement('div');
+      msgEl.innerHTML = `<b style="color:#ffb300;">${data.sender}:</b> ${data.text}`;
+      box.appendChild(msgEl);
+      box.scrollTop = box.scrollHeight;
+    });
+
+    socket.on('forceToLobby', () => {
+      document.getElementById('username').disabled = false;
+      document.getElementById('username').value = '';
+      gameState = null;
+      updateUI_ToLobby();
+    });
+
+    function updateUI_ToLobby() {
+      document.getElementById('lobby').style.display = 'block';
+      document.getElementById('pre-start-screen').style.display = 'none';
+      document.getElementById('rule-setting').style.display = 'none';
+      document.getElementById('round-result').style.display = 'none';
+      document.getElementById('game-board').style.display = 'none';
+    }
+
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input-text');
+      const text = input.value.trim();
+      if(!text) return;
+      socket.emit('msgSend', { sender: myNameStr, text: text });
+      input.value = '';
+    }
+
+    socket.on('yanivAlert', (data) => {
+      const overlay = document.getElementById('yaniv-screen-alert');
+      const banner = document.getElementById('yaniv-banner-text');
+      const sub = document.getElementById('yaniv-sub-text');
+      if (data.isReturned) {
+        banner.innerText = "⚡ YANIV GAESHI !! ⚡"; banner.style.color = "#ff3366"; banner.style.textShadow = "0 0 30px #ff3366";
+        sub.innerText = `${data.announcer} のヤニブ阻止！ヤニブ返し発生！`;
+      } else {
+        banner.innerText = "🎉 YANIV !! 🎉"; banner.style.color = "#ffb300"; banner.style.textShadow = "0 0 30px #ffb300";
+        sub.innerText = `${data.announcer} が見事にヤニブを宣言！`;
+      }
+      overlay.classList.add('show');
+      setTimeout(() => { overlay.classList.remove('show'); }, 2500);
+    });
+
+    socket.on('dbUpdate', (dbData) => {
+      const rankList = document.getElementById('db-ranking-list');
+      const sorted = Object.keys(dbData).sort((a,b) => dbData[b] - dbData[a]);
+      if (sorted.length === 0) { rankList.innerHTML = "登録プレイヤーはいません。"; return; }
+      rankList.innerHTML = sorted.map((name, i) => `<b>${i+1}位:</b> ${name} (${dbData[name]} pt)`).join('<br>');
+    });
+
     socket.on('stateUpdate', (state) => {
       gameState = state;
       updateUI();
     });
 
-    // ★【新機能】サーバーから送られてくる統計データをリアルタイム描画
     socket.on('statsUpdate', (stats) => {
       document.getElementById('stat-total-rounds').innerText = stats.totalRounds;
-      
       const totalDec = stats.totalDeclarations || 0;
       if (totalDec > 0) {
-        const yanivRate = ((stats.yanivSuccessCount / totalDec) * 100).toFixed(1);
-        const asafRate = ((stats.asafCount / totalDec) * 100).toFixed(1);
-        const avgScore = (stats.averageYanivScoreSum / totalDec).toFixed(1);
-        
-        document.getElementById('stat-yaniv-rate').innerText = `${yanivRate} %`;
-        document.getElementById('stat-asaf-rate').innerText = `${asafRate} %`;
-        document.getElementById('stat-avg-score').innerText = `${avgScore} 点`;
-      } else {
-        document.getElementById('stat-yaniv-rate').innerText = `0.0 %`;
-        document.getElementById('stat-asaf-rate').innerText = `0.0 %`;
-        document.getElementById('stat-avg-score').innerText = `0.0 点`;
+        document.getElementById('stat-yaniv-rate').innerText = `${((stats.yanivSuccessCount / totalDec) * 100).toFixed(1)} %`;
+        document.getElementById('stat-asaf-rate').innerText = `${((stats.asafCount / totalDec) * 100).toFixed(1)} %`;
+        document.getElementById('stat-avg-score').innerText = `${(stats.averageYanivScoreSum / totalDec).toFixed(1)} 点`;
       }
-
       document.getElementById('stat-max-points').innerText = `${stats.maxPointsInRound} pt`;
-
-      // AI勝数のリスト更新
-      const winsList = document.getElementById('ai-wins-list');
-      winsList.innerHTML = '';
+      const winsList = document.getElementById('ai-wins-list'); winsList.innerHTML = '';
       Object.keys(stats.aiWins).forEach(name => {
-        const winVal = stats.aiWins[name];
-        const row = document.createElement('div');
-        row.className = 'stat-row';
-        row.innerHTML = `<span>${name}</span><span class="stat-val" style="color:#ff9800;">${winVal} 勝</span>`;
-        winsList.appendChild(row);
+        winsList.innerHTML += `<div class="stat-row"><span>${name}</span><span class="stat-val" style="color:#ff9800;">${stats.aiWins[name]} 勝</span></div>`;
       });
     });
 
     socket.on('errorMsg', (msg) => { alert(msg); });
 
     function join() {
-      const name = document.getElementById('username').value;
-      socket.emit('joinGame', name);
+      const name = document.getElementById('username').value.trim();
+      myNameStr = name || `プレイヤー ${Date.now().toString().slice(-4)}`;
+      socket.emit('joinGame', myNameStr);
       document.getElementById('username').disabled = true;
     }
 
     function startGame() { socket.emit('startGame'); }
+    function startSimulation(isFullAI) { if(isFullAI) socket.emit('startFullAISimMode'); else socket.emit('startSimMode'); }
+    function stopSimulation() { socket.emit('stopSimulation'); }
+    function leavePlayer() { if(confirm("本当にこの試合から退出（ロビーから退室）しますか？")) { socket.emit('leavePlayerAction'); } }
+    function confirmPreStart() { socket.emit('confirmPreStart'); }
 
-    // ★ 完全自動か介入可能かを選んでシミュレーションを開始
-    function startSimulation(isFullAI) {
-      if (isFullAI) {
-        socket.emit('startFullAISimMode');
+    function resetPoints() {
+      if(confirm("全プレイヤーの通算累積ポイントデータを完全にリセットしてよろしいですか？")) { socket.emit('resetDatabase'); }
+    }
+
+    function toggleAnyRule() {
+      const btn = document.getElementById('any-rule-btn');
+      const xInput = document.getElementById('rule-x');
+      isAnyRuleSelected = !isAnyRuleSelected;
+      if (isAnyRuleSelected) {
+        btn.style.background = "#e91e63"; btn.style.borderColor = "#ff4081";
+        xInput.disabled = true; xInput.style.opacity = "0.4";
       } else {
-        socket.emit('startSimMode');
+        btn.style.background = "#555"; btn.style.borderColor = "#777";
+        xInput.disabled = false; xInput.style.opacity = "1";
       }
     }
 
@@ -450,44 +475,94 @@
       const x = document.getElementById('rule-x').value;
       const y = document.getElementById('rule-y').value;
       const z = document.getElementById('rule-z').value;
-      socket.emit('setRules', { x, y, z });
+      socket.emit('setRules', { x, isAny: isAnyRuleSelected, y, z });
     }
     function nextRound() { socket.emit('nextRound'); }
 
     function updateUI() {
       if (!gameState) return;
-
       const me = gameState.players.find(p => p.id === myId);
 
+      if (!me && gameState.status !== 'lobby' && !gameState.isSimulating) { return; }
+
+      if (gameState.rules) {
+        document.getElementById('badge-x').innerText = gameState.rules.isAny ? `X(宣言): いつでもOK` : `X(宣言): ${gameState.rules.x}以下`;
+        document.getElementById('badge-y').innerText = `Y(通常): ${gameState.rules.y}倍`;
+        document.getElementById('badge-z').innerText = `Z(返し): ${gameState.rules.z}倍`;
+      }
+
       document.getElementById('lobby').style.display = 'none';
+      document.getElementById('pre-start-screen').style.display = 'none';
       document.getElementById('rule-setting').style.display = 'none';
       document.getElementById('round-result').style.display = 'none';
       document.getElementById('game-board').style.display = 'none';
 
       if (gameState.status === 'lobby') {
         document.getElementById('lobby').style.display = 'block';
-        if (me) {
-          document.getElementById('start-btn').style.display = 'inline-block';
-        }
-      } else if (gameState.status === 'setting_rules') {
+      } 
+      else if (gameState.status === 'pre_start') {
+        document.getElementById('pre-start-screen').style.display = 'block';
+        const listDiv = document.getElementById('pre-start-list');
+        listDiv.innerHTML = gameState.players.map((p, i) => `<div><b>${i+1}.</b> ${p.name} ➔ 通算持ち点: <span style="color:#ffb300; font-weight:bold;">${p.savedTotalScore || 0} pt</span></div>`).join('');
+      } 
+      else if (gameState.status === 'setting_rules') {
         const isDealer = gameState.players[gameState.buttonIndex].id === myId;
-        if (isDealer && !gameState.isFullAISim) {
-          document.getElementById('rule-setting').style.display = 'block';
-        } else {
+        if (isDealer && !gameState.isFullAISim) { document.getElementById('rule-setting').style.display = 'block'; } 
+        else {
           document.getElementById('lobby').style.display = 'block';
           document.getElementById('lobby').innerHTML = `<h2>親 (${gameState.players[gameState.buttonIndex].name}) がルールを設定中...</h2>`;
         }
-      } else if (gameState.status === 'round_end') {
+      } 
+      else if (gameState.status === 'round_end') {
         document.getElementById('round-result').style.display = 'block';
-        const logDiv = document.getElementById('result-log');
-        logDiv.innerHTML = gameState.roundHistory.join('\n') + '\n\n【トータルスコア】\n' +
-          gameState.players.map(p => `・${p.name}: ${p.score} pt ${p.isAI ? '🤖' : ''}`).join('\n');
+        
+        const data = gameState.roundResultData;
+        if (data) {
+          document.getElementById('round-number-tag').innerText = `ROUND ${data.roundNumber}`;
+          document.getElementById('result-summary-title').innerText = data.summaryTitle;
+          document.getElementById('result-summary-desc').innerText = data.summaryDesc;
+
+          const tbody = document.getElementById('result-table-body');
+          tbody.innerHTML = '';
+          
+          data.playerRows.forEach(row => {
+            let nameLabels = `<b>${row.name}</b> ${row.isAI ? '🤖' : ''}`;
+            if (row.isDeclarer) nameLabels += `<span class="row-badge badge-decl">ヤニブ宣言者</span>`;
+            if (row.isGetter) nameLabels += `<span class="row-badge badge-getter">ゲッター(勝者)</span>`;
+
+            const scoreText = `<span style="font-weight:bold;">${row.rawScore} 点</span>`;
+            
+            let earnedText = `<span style="color:#aaa;">0 pt</span>`;
+            if (row.finalEarned > 0) {
+              earnedText = `<span style="color:#00ffcc; font-weight:bold; font-size:1.1rem;">+${row.finalEarned} pt</span>`;
+            }
+
+            const totalText = !gameState.isSimulating ? `<div style="font-size:0.75rem; color:#888; margin-top:2px;">通算: ${row.totalAccumulated} pt</div>` : '';
+
+            const tr = document.createElement('tr');
+            if (row.isGetter) tr.style.background = 'rgba(0, 200, 83, 0.08)';
+            
+            tr.innerHTML = `
+              <td><div>${nameLabels}</div>${totalText}</td>
+              <td style="font-family: monospace; font-size:1rem; color:#ddd;">[ ${row.handDetails} ]</td>
+              <td style="text-align:center;">${scoreText}</td>
+              <td style="text-align:right;">${earnedText}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+
+          const logBox = document.getElementById('result-system-logs');
+          if (data.systemSystemLogs && data.systemSystemLogs.length > 0) {
+            logBox.style.display = 'block';
+            logBox.innerHTML = data.systemSystemLogs.map(l => `<div>${l}</div>`).join('');
+          } else {
+            logBox.style.display = 'none';
+          }
+        }
 
         if (gameState.isSimulating) {
-          document.getElementById('next-btn').style.display = 'none';
           document.getElementById('sim-wait-msg').style.display = 'block';
         } else {
-          document.getElementById('next-btn').style.display = 'inline-block';
           document.getElementById('sim-wait-msg').style.display = 'none';
         }
       } else if (gameState.status === 'playing') {
@@ -498,14 +573,10 @@
 
     function renderGameBoard(me) {
       document.getElementById('sim-badge').style.display = gameState.isSimulating ? 'inline-block' : 'none';
+      document.getElementById('dashboard-panel').style.display = gameState.isSimulating ? 'block' : 'none';
 
-      // ★ 完全自動シミュレーション時は、不要なパネルを隠して見やすくします
       const myPanel = document.getElementById('my-panel');
-      if (gameState.isFullAISim) {
-        myPanel.style.display = 'none'; // 自分の手札パネルは非表示
-      } else {
-        myPanel.style.display = 'block';
-      }
+      if (gameState.isFullAISim) { myPanel.style.display = 'none'; } else { myPanel.style.display = 'block'; }
 
       const canvas = document.getElementById('table-canvas');
       const oldNodes = canvas.querySelectorAll('.player-node');
@@ -516,14 +587,14 @@
         const angle = (idx / numPlayers) * 2 * Math.PI + Math.PI/2;
         const xPercent = 50 + 38 * Math.cos(angle);
         const yPercent = 50 + 33 * Math.sin(angle);
-
         const node = document.createElement('div');
         node.className = `player-node ${idx === gameState.currentTurn ? 'active' : ''} ${idx === gameState.buttonIndex ? 'dealer' : ''}`;
-        node.style.left = `${xPercent}%`;
-        node.style.top = `${yPercent}%`;
+        node.style.left = `${xPercent}%`; node.style.top = `${yPercent}%`;
+        
+        // ★【バグ修正箇所】ゲーム中は「前回：〇 pt（直前ラウンドの獲得点）」に書き換えました
         node.innerHTML = `
           <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p.name} ${p.isAI ? '🤖' : ''}</div>
-          <div style="font-size:0.8rem; color:#ffb300;">合計スコア: ${p.score}</div>
+          <div style="font-size:0.8rem; color:#ffb300;">前回: ${p.score} pt</div>
           <div style="font-size:0.75rem; color:#aaa;">手札: ${p.hand ? p.hand.length : 0} 枚</div>
         `;
         canvas.appendChild(node);
@@ -535,44 +606,28 @@
 
       const deckNode = document.getElementById('deck-node');
       deckNode.innerText = `${gameState.deck.length} 枚`;
-      if (isMyTurn && serverTurnState === 'draw') {
-        deckNode.classList.add('active-draw');
-      } else {
-        deckNode.classList.remove('active-draw');
-      }
+      if (isMyTurn && serverTurnState === 'draw') { deckNode.classList.add('active-draw'); } 
+      else { deckNode.classList.remove('active-draw'); }
 
       const discardSetArea = document.getElementById('discard-set-area');
       discardSetArea.innerHTML = '';
-
       const lastSet = gameState.lastDiscardSet || [];
       lastSet.forEach((card, idx) => {
         const cardEl = document.createElement('div');
         cardEl.className = 'card';
         setupCardUI(cardEl, card);
-
         if (isMyTurn && serverTurnState === 'draw') {
           let isPlayable = false;
-          if (lastSet.length <= 2) {
-            isPlayable = true;
-          } else {
-            if (idx === 0 || idx === lastSet.length - 1) {
-              isPlayable = true;
-            }
-          }
-
+          if (lastSet.length <= 2) { isPlayable = true; } 
+          else { if (idx === 0 || idx === lastSet.length - 1) isPlayable = true; }
           if (isPlayable) {
             cardEl.classList.add('playable-discard');
             cardEl.onclick = () => drawFromDiscard(card.id);
-          } else {
-            cardEl.classList.add('unplayable-discard');
-          }
+          } else { cardEl.classList.add('unplayable-discard'); }
         }
         discardSetArea.appendChild(cardEl);
       });
-
-      if (lastSet.length === 0) {
-        discardSetArea.innerHTML = '<div style="color:#aaa; font-style:italic; padding:10px;">なし</div>';
-      }
+      if (lastSet.length === 0) { discardSetArea.innerHTML = '<div style="color:#aaa; font-style:italic; padding:10px;">なし</div>'; }
 
       const turnIndicator = document.getElementById('turn-indicator');
       const actionBtn = document.getElementById('action-btn');
@@ -585,13 +640,11 @@
           yanivBtn.disabled = !canIYaniv(me);
         } else if (serverTurnState === 'draw') {
           turnIndicator.innerText = "★ カードを捨てました！ 山札か、黄色枠の捨て札をクリックして1枚引いてください。";
-          actionBtn.disabled = true;
-          yanivBtn.disabled = true;
+          actionBtn.disabled = true; yanivBtn.disabled = true;
         }
       } else {
-        turnIndicator.innerText = `${activePlayer ? activePlayer.name : '誰か'} のターンです (${serverTurnState === 'discard' ? 'カード選択中' : 'ドロー待ち'})。`;
-        actionBtn.disabled = true;
-        yanivBtn.disabled = true;
+        turnIndicator.innerText = `${activePlayer ? activePlayer.name : '誰か'} のターンです。`;
+        actionBtn.disabled = true; yanivBtn.disabled = true;
       }
 
       const handDiv = document.getElementById('my-hand');
@@ -601,26 +654,18 @@
           const cardEl = document.createElement('div');
           const selectIndex = selectedCardsList.indexOf(card.id);
           const isSelected = selectIndex !== -1;
-          
           cardEl.className = `card ${isSelected ? 'selected' : ''}`;
           setupCardUI(cardEl, card);
-
           if (isSelected) {
             const badge = document.createElement('div');
-            badge.className = 'select-badge';
-            badge.innerText = selectIndex + 1;
+            badge.className = 'select-badge'; badge.innerText = selectIndex + 1;
             cardEl.appendChild(badge);
           }
-
           cardEl.onclick = () => {
             if (!isMyTurn || serverTurnState !== 'discard') return;
-            
             const idxInList = selectedCardsList.indexOf(card.id);
-            if (idxInList !== -1) {
-              selectedCardsList.splice(idxInList, 1);
-            } else {
-              selectedCardsList.push(card.id);
-            }
+            if (idxInList !== -1) { selectedCardsList.splice(idxInList, 1); } 
+            else { selectedCardsList.push(card.id); }
             renderGameBoard(me);
           };
           handDiv.appendChild(cardEl);
@@ -632,126 +677,19 @@
       el.innerHTML = '';
       el.className = el.className.split(' ').filter(c => c === 'card' || c === 'selected' || c === 'playable-discard' || c === 'unplayable-discard').join(' ');
       if (!card) return;
-      
       if (card.value === 0) {
         el.classList.add('joker');
-        el.innerHTML = `
-          <div style="text-align:left; color:#7b1fa2;">JK</div>
-          <div style="font-size:1.8rem; text-align:center; color:#7b1fa2;">🃏</div>
-          <div style="text-align:right; color:#7b1fa2;">JK</div>
-        `;
+        el.innerHTML = `<div style="text-align:left; color:#7b1fa2;">JK</div><div style="font-size:1.8rem; text-align:center; color:#7b1fa2;">🃏</div><div style="text-align:right; color:#7b1fa2;">JK</div>`;
       } else {
         const suitSymbols = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣' };
         const displayValue = card.value === 1 ? 'A' : card.value === 11 ? 'J' : card.value === 12 ? 'Q' : card.value === 13 ? 'K' : card.value;
-        if (card.suit === 'H' || card.suit === 'D') {
-          el.classList.add('red');
-        }
+        if (card.suit === 'H' || card.suit === 'D') { el.classList.add('red'); }
         el.innerHTML = `
           <div style="text-align:left;">${displayValue}</div>
           <div style="font-size:2rem; text-align:center;">${suitSymbols[card.suit]}</div>
           <div style="text-align:right; transform:rotate(180deg);">${displayValue}</div>
         `;
       }
-    }
-
-    function canIYaniv(me) {
-      if (!me || !me.hand) return false;
-      let total = 0;
-      for (let c of me.hand) {
-        if (c.value === 0) total += 0;
-        else if (c.value >= 10) total += 10;
-        else total += c.value;
-      }
-      return total <= gameState.rules.x;
-    }
-
-    function isValidDiscardSet(cards) {
-      if (cards.length === 0) return false;
-      if (cards.length === 1) return true;
-
-      const jokers = cards.filter(c => c.value === 0);
-      const normalCards = cards.filter(c => c.value !== 0);
-
-      if (normalCards.length === 0) return true;
-
-      const firstVal = normalCards[0].value;
-      const isAllSameValue = normalCards.every(c => c.value === firstVal);
-      if (isAllSameValue) {
-        return true;
-      }
-
-      if (cards.length >= 3) {
-        const firstSuit = normalCards[0].suit;
-        const isSameSuit = normalCards.every(c => c.suit === firstSuit);
-        if (!isSameSuit) return false;
-
-        const values = normalCards.map(c => c.value).sort((a, b) => a - b);
-        
-        let jokerCount = jokers.length;
-        for (let i = 0; i < values.length - 1; i++) {
-          const gap = values[i + 1] - values[i] - 1;
-          if (gap > 0) {
-            jokerCount -= gap;
-            if (jokerCount < 0) return false;
-          } else if (gap < 0) {
-            return false;
-          }
-        }
-        return true;
-      }
-
-      return false;
-    }
-
-    function executePlay() {
-      if (selectedCardsList.length === 0) {
-        alert('捨てるカードを1枚以上選択してください。');
-        return;
-      }
-
-      const me = gameState.players.find(p => p.id === myId);
-      const chosenCards = selectedCardsList.map(id => me.hand.find(c => c.id === id));
-
-      if (!isValidDiscardSet(chosenCards)) {
-        alert('【無効な出し方です】');
-        return;
-      }
-
-      socket.emit('discardCards', {
-        orderedDiscardIds: selectedCardsList
-      });
-    }
-
-    function drawFromDeck() {
-      if (gameState.turnState !== 'draw') return;
-      socket.emit('drawCard', {
-        drawSource: 'deck'
-      });
-      resetTurnState();
-    }
-
-    function drawFromDiscard(targetCardId) {
-      if (gameState.turnState !== 'draw') return;
-      socket.emit('drawCard', {
-        drawSource: 'discard',
-        drawCardId: targetCardId
-      });
-      resetTurnState();
-    }
-
-    function declareYaniv() {
-      if (gameState.turnState !== 'discard') {
-        alert('カードを捨てた後はヤニブ宣言できません。');
-        return;
-      }
-      if (confirm('本当にヤニブを宣言しますか？')) {
-        socket.emit('declareYaniv');
-        resetTurnState();
-      }
-    }
-
-    function resetTurnState() {
-      selectedCardsList = [];
     }
   </script>
 </body>
