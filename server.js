@@ -159,13 +159,11 @@ function startNewRound() {
   io.emit('statsUpdate', simStats);
 }
 
-// ★【修正】ご指定の確率・範囲のルール決定ロジックを実装
 function autoSetRules() {
   if (gameState.status !== 'setting_rules') return;
   const buttonPlayer = gameState.players[gameState.buttonIndex];
   if (buttonPlayer && buttonPlayer.isAI) {
     
-    // 1. X値の決定: 20%の確率でAny、残り80%は5〜10の中からランダム
     let chosenX = 7;
     let chosenAny = false;
     if (Math.random() < 0.2) {
@@ -175,17 +173,14 @@ function autoSetRules() {
       chosenX = xOptions[Math.floor(Math.random() * xOptions.length)];
     }
 
-    // 2. Y倍率の決定: 6〜10の中から20%ずつ（均等確率）
     const yOptions = [6, 7, 8, 9, 10];
     let chosenY = yOptions[Math.floor(Math.random() * yOptions.length)];
 
-    // 3. Z倍率の決定: 6〜10の中から20%ずつ（均等確率）
     const zOptions = [6, 7, 8, 9, 10];
     let chosenZ = zOptions[Math.floor(Math.random() * zOptions.length)];
 
     gameState.rules = { x: chosenX, isAny: chosenAny, y: chosenY, z: chosenZ };
     
-    // ルール変更のチャット告知
     const ruleLogText = chosenAny 
       ? `親の ${buttonPlayer.name} が特殊ルール [Any (いつでもヤニブOK) / 通常${chosenY}倍 / 返し${chosenZ}倍] を宣告しました！`
       : `親の ${buttonPlayer.name} がルール [X値: ${chosenX}点以下 / 通常${chosenY}倍 / 返し${chosenZ}倍] を設定しました。`;
@@ -568,10 +563,18 @@ io.on('connection', (socket) => {
       y: parseInt(rules.y) || 1,
       z: parseInt(rules.z) || 2
     };
+
+    // ★【バグ修正箇所】ゲーム開始時の初期化ループを安全なステステ設定のみに限定
     for (let player of gameState.players) {
-      player.score = 0; 
-      for (let i = 0; i < 5; i++) { player.hand.push(gameState.deck.pop()); }
+      player.hand = []; // 手札配列の初期化を明示
+      player.score = 0; // そのラウンドの獲得点初期化
+      
+      // 全員に山札から5枚配る
+      for (let i = 0; i < 5; i++) { 
+        player.hand.push(gameState.deck.pop()); 
+      }
     }
+
     let firstCard = gameState.deck.pop();
     while (firstCard.value === 0 || firstCard.value === 1) {
       gameState.deck.push(firstCard);
@@ -581,6 +584,7 @@ io.on('connection', (socket) => {
       }
       firstCard = gameState.deck.pop();
     }
+
     gameState.discardPile.push(firstCard);
     gameState.lastDiscardSet = [firstCard];
     gameState.status = 'playing';

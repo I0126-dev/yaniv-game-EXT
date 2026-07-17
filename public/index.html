@@ -103,6 +103,8 @@
       border: 15px solid #5a3825; border-radius: 150px; height: 480px;
       box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 10px 20px rgba(0,0,0,0.5);
     }
+    
+    /* 🛠️ プレイヤーノードと吹き出し演出用のスタイル */
     .player-node {
       position: absolute; background: rgba(0,0,0,0.85); border: 2px solid #aaa;
       border-radius: 8px; padding: 8px 12px; text-align: center; width: 140px;
@@ -113,6 +115,21 @@
       content: 'D'; position: absolute; top: -10px; right: -10px; background: #ffeb3b;
       color: black; font-weight: bold; width: 22px; height: 22px; border-radius: 50%;
       line-height: 22px; font-size: 0.8rem; border: 1px solid black;
+    }
+
+    /* 💬 【新規】チャットのリアルタイム吹き出しポップアップ */
+    .chat-bubble {
+      position: absolute; top: -55px; left: 80px; background: linear-gradient(135deg, #00c853, #009624);
+      color: white; padding: 6px 12px; border-radius: 12px; font-size: 0.85rem; max-width: 160px;
+      word-wrap: break-word; text-align: left; box-shadow: 0 4px 12px rgba(0,200,83,0.4);
+      z-index: 100; font-weight: bold; opacity: 0; transform: scale(0.7);
+      transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+    }
+    .chat-bubble.show { opacity: 1; transform: scale(1); }
+    .chat-bubble::after {
+      content: ''; position: absolute; bottom: -6px; left: 15px;
+      border-width: 6px 6px 0; border-style: solid; border-color: #009624 transparent;
+      display: block; width: 0;
     }
 
     .center-pile {
@@ -366,12 +383,42 @@
 
     socket.on('connect', () => { myId = socket.id; });
     
+    // ★【新演出】チャットを受信した際、右下のログに加えて円卓上の該当プレイヤーに「吹き出しポップアップ」を発生させる
     socket.on('msgReceive', (data) => {
+      // 1. チャットログ欄への追加
       const box = document.getElementById('chat-log-box');
       const msgEl = document.createElement('div');
       msgEl.innerHTML = `<b style="color:#ffb300;">${data.sender}:</b> ${data.text}`;
       box.appendChild(msgEl);
       box.scrollTop = box.scrollHeight;
+
+      // 2. 円卓の該当プレイヤーノードを探して吹き出しを出す演出
+      const canvas = document.getElementById('table-canvas');
+      if (!canvas) return;
+      const nodes = canvas.querySelectorAll('.player-node');
+      nodes.forEach(node => {
+        const nameDiv = node.querySelector('div');
+        if (nameDiv && nameDiv.innerText.includes(data.sender)) {
+          // 既存の吹き出しがあれば消去
+          const oldBubble = node.querySelector('.chat-bubble');
+          if (oldBubble) oldBubble.remove();
+
+          // 新しい吹き出し要素を作成
+          const bubble = document.createElement('div');
+          bubble.className = 'chat-bubble';
+          bubble.innerText = data.text;
+          node.appendChild(bubble);
+
+          // わずかに遅らせてアニメーション（フェードイン・拡大）を発火
+          setTimeout(() => bubble.classList.add('show'), 50);
+
+          // 4秒後にふわっと消去
+          setTimeout(() => {
+            bubble.classList.remove('show');
+            setTimeout(() => bubble.remove(), 200);
+          }, 4000);
+        }
+      });
     });
 
     socket.on('forceToLobby', () => {
@@ -578,37 +625,65 @@
       const myPanel = document.getElementById('my-panel');
       if (gameState.isFullAISim) { myPanel.style.display = 'none'; } else { myPanel.style.display = 'block'; }
 
+      // 1. 円卓の描画
       const canvas = document.getElementById('table-canvas');
       const oldNodes = canvas.querySelectorAll('.player-node');
-      oldNodes.forEach(n => n.remove());
+      
+      // ★吹き出しアニメーション継続のため、既存ノードのテキストや状態クラスのみを綺麗に書き換える（丸ごと削除して再生成すると、表示中の吹き出しが1秒で消滅してしまうため）
+      const existingNodesMap = {};
+      oldNodes.forEach(n => {
+        const nameDiv = n.querySelector('div');
+        if (nameDiv) {
+          // 表示されている純粋な名前テキストを抽出
+          const cleanName = nameDiv.innerText.replace(' 🤖', '').trim();
+          existingNodesMap[cleanName] = n;
+        }
+      });
 
       const numPlayers = gameState.players.length;
       gameState.players.forEach((p, idx) => {
         const angle = (idx / numPlayers) * 2 * Math.PI + Math.PI/2;
         const xPercent = 50 + 38 * Math.cos(angle);
         const yPercent = 50 + 33 * Math.sin(angle);
-        const node = document.createElement('div');
-        node.className = `player-node ${idx === gameState.currentTurn ? 'active' : ''} ${idx === gameState.buttonIndex ? 'dealer' : ''}`;
-        node.style.left = `${xPercent}%`; node.style.top = `${yPercent}%`;
         
-        // ★【バグ修正箇所】ゲーム中は「前回：〇 pt（直前ラウンドの獲得点）」に書き換えました
+        let node = existingNodesMap[p.name];
+        if (!node) {
+          node = document.createElement('div');
+          node.className = 'player-node';
+          canvas.appendChild(node);
+        } else {
+          delete existingNodesMap[p.name]; // 生存プレイヤー
+        }
+        
+        // クラスと位置の動的更新
+        node.className = `player-node ${idx === gameState.currentTurn ? 'active' : ''} ${idx === gameState.buttonIndex ? 'dealer' : ''}`;
+        node.style.left = `${xPercent}%`; 
+        node.style.top = `${yPercent}%`;
+        
+        // 既存の吹き出しがあれば退避させて、情報欄だけを安全に更新
+        const bubble = node.querySelector('.chat-bubble');
         node.innerHTML = `
           <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p.name} ${p.isAI ? '🤖' : ''}</div>
           <div style="font-size:0.8rem; color:#ffb300;">前回: ${p.score} pt</div>
           <div style="font-size:0.75rem; color:#aaa;">手札: ${p.hand ? p.hand.length : 0} 枚</div>
         `;
-        canvas.appendChild(node);
+        if (bubble) node.appendChild(bubble); // 退避した吹き出しを再結合
       });
+
+      // 退出してもういなくなったプレイヤーの残骸ノードを掃除
+      Object.keys(existingNodesMap).forEach(k => existingNodesMap[k].remove());
 
       const activePlayer = gameState.players[gameState.currentTurn];
       const isMyTurn = (activePlayer && activePlayer.id === myId);
       const serverTurnState = gameState.turnState;
 
+      // 2. 山札の枚数描画
       const deckNode = document.getElementById('deck-node');
       deckNode.innerText = `${gameState.deck.length} 枚`;
       if (isMyTurn && serverTurnState === 'draw') { deckNode.classList.add('active-draw'); } 
       else { deckNode.classList.remove('active-draw'); }
 
+      // 3. 捨て札の描画
       const discardSetArea = document.getElementById('discard-set-area');
       discardSetArea.innerHTML = '';
       const lastSet = gameState.lastDiscardSet || [];
@@ -629,24 +704,7 @@
       });
       if (lastSet.length === 0) { discardSetArea.innerHTML = '<div style="color:#aaa; font-style:italic; padding:10px;">なし</div>'; }
 
-      const turnIndicator = document.getElementById('turn-indicator');
-      const actionBtn = document.getElementById('action-btn');
-      const yanivBtn = document.getElementById('yaniv-btn');
-
-      if (isMyTurn) {
-        if (serverTurnState === 'discard') {
-          turnIndicator.innerText = "★ あなたのターン！ 捨てるカードを選択し「捨てる」を押すか、ヤニブを宣言してください。";
-          actionBtn.disabled = false;
-          yanivBtn.disabled = !canIYaniv(me);
-        } else if (serverTurnState === 'draw') {
-          turnIndicator.innerText = "★ カードを捨てました！ 山札か、黄色枠の捨て札をクリックして1枚引いてください。";
-          actionBtn.disabled = true; yanivBtn.disabled = true;
-        }
-      } else {
-        turnIndicator.innerText = `${activePlayer ? activePlayer.name : '誰か'} のターンです。`;
-        actionBtn.disabled = true; yanivBtn.disabled = true;
-      }
-
+      // 4. 手札（カードオブジェクト）の表示
       const handDiv = document.getElementById('my-hand');
       handDiv.innerHTML = '';
       if (me && me.hand) {
@@ -671,6 +729,29 @@
           handDiv.appendChild(cardEl);
         });
       }
+
+      // 5. ターンインジケーターおよびアクションボタンの制御
+      const turnIndicator = document.getElementById('turn-indicator');
+      const actionBtn = document.getElementById('action-btn');
+      const yanivBtn = document.getElementById('yaniv-btn');
+
+      try {
+        if (isMyTurn) {
+          if (serverTurnState === 'discard') {
+            turnIndicator.innerText = "★ あなたのターン！ 捨てるカードを選択し「捨てる」を押すか、ヤニブを宣言してください。";
+            actionBtn.disabled = false;
+            yanivBtn.disabled = !canIYaniv(me);
+          } else if (serverTurnState === 'draw') {
+            turnIndicator.innerText = "★ カードを捨てました！ 山札か、黄色枠の捨て札をクリックして1枚引いてください。";
+            actionBtn.disabled = true; yanivBtn.disabled = true;
+          }
+        } else {
+          turnIndicator.innerText = `${activePlayer ? activePlayer.name : '誰か'} のターンです。`;
+          actionBtn.disabled = true; yanivBtn.disabled = true;
+        }
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     function setupCardUI(el, card) {
@@ -691,6 +772,55 @@
         `;
       }
     }
+
+    function canIYaniv(me) {
+      if (!me || !me.hand) return false;
+      if (gameState.rules && gameState.rules.isAny) return true;
+
+      let total = 0;
+      for (let c of me.hand) {
+        if (c.value === 0) total += 0;
+        else if (c.value >= 10) total += 10;
+        else total += c.value;
+      }
+      return total <= (gameState.rules ? gameState.rules.x : 7);
+    }
+
+    function isValidDiscardSet(cards) {
+      if (cards.length === 0) return false;
+      if (cards.length === 1) return true;
+      const jokers = cards.filter(c => c.value === 0);
+      const normalCards = cards.filter(c => c.value !== 0);
+      if (normalCards.length === 0) return true;
+      const firstVal = normalCards[0].value;
+      if (normalCards.every(c => c.value === firstVal)) return true;
+      if (cards.length >= 3) {
+        if (!normalCards.every(c => c.suit === normalCards[0].suit)) return false;
+        const values = normalCards.map(c => c.value).sort((a, b) => a - b);
+        let jokerCount = jokers.length;
+        for (let i = 0; i < values.length - 1; i++) {
+          const gap = values[i + 1] - values[i] - 1;
+          if (gap > 0) { jokerCount -= gap; if (jokerCount < 0) return false; } 
+          else if (gap < 0) { return false; }
+        }
+        return true;
+      }
+      return false;
+    }
+
+    function executePlay() {
+      if (selectedCardsList.length === 0) return;
+      const me = gameState.players.find(p => p.id === myId);
+      const chosenCards = selectedCardsList.map(id => me.hand.find(c => c.id === id));
+      if (!isValidDiscardSet(chosenCards)) { alert('無効な出し方です。'); return; }
+      socket.emit('discardCards', { orderedDiscardIds: selectedCardsList });
+    }
+
+    // ★【バグ修正箇所】ドロー実行時に手札選択用の配列(selectedCardsList)を「確実にゼロリセット」するロジックを統合し、手番が綺麗に回るように修正
+    function drawFromDeck() { if (gameState.turnState !== 'draw') return; resetTurnState(); socket.emit('drawCard', { drawSource: 'deck' }); }
+    function drawFromDiscard(targetCardId) { if (gameState.turnState !== 'draw') return; resetTurnState(); socket.emit('drawCard', { drawSource: 'discard', drawCardId: targetCardId }); }
+    function declareYaniv() { if (gameState.turnState !== 'discard') return; if (confirm('本当にヤニブを宣言しますか？')) { resetTurnState(); socket.emit('declareYaniv'); } }
+    function resetTurnState() { selectedCardsList = []; }
   </script>
 </body>
 </html>
