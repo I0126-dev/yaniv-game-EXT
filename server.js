@@ -61,6 +61,9 @@ let simStats = {
   aiWins: { 'AI-スティーブ': 0, 'AI-アリス': 0, 'AI-ボブ': 0, 'AI-キャロル': 0 }
 };
 
+// ★【新設】AI戦の自動進行タイマーの暴走を止めるためのグローバル管理変数
+let aiNextRoundTimer = null;
+
 function createDeck() {
   const suits = ['S', 'H', 'D', 'C'];
   let deck = [];
@@ -423,7 +426,12 @@ function executeYaniv(socketId) {
 
   if (gameState.isSimulating) {
     const transitionDelay = gameState.isFullAISim ? 1200 : 3000;
-    setTimeout(() => {
+    
+    // ★【バグ修正】既存タイマーがあれば念のためクリア
+    if (aiNextRoundTimer) clearTimeout(aiNextRoundTimer);
+
+    // タイマーIDを変数に保持
+    aiNextRoundTimer = setTimeout(() => {
       if (!gameState.isSimulating || gameState.status !== 'round_end') return;
       
       gameState.currentRoundNum += 1; 
@@ -451,6 +459,8 @@ function removePlayerFromGame(targetId) {
   gameState.players.splice(pIndex, 1);
 
   if (gameState.players.length === 0) {
+    // タイマー破壊
+    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     gameState.status = 'lobby';
     gameState.isSimulating = false;
     gameState.isFullAISim = false;
@@ -478,6 +488,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('startFullAISimMode', () => {
+    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     simStats = {
       totalRounds: 0, yanivSuccessCount: 0, asafCount: 0, maxPointsInRound: 0,
       averageYanivScoreSum: 0, totalDeclarations: 0,
@@ -499,6 +510,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('startSimMode', () => {
+    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     gameState.players = [];
     gameState.status = 'lobby';
     gameState.isSimulating = true;
@@ -515,7 +527,12 @@ io.on('connection', (socket) => {
     setTimeout(() => { autoSetRules(); }, 1000);
   });
 
+  // ★【重要バグ修正】人間からシミュレーション強制終了シグナルが来たら、次のラウンドへ進むタイマーを最優先で即座に完全破壊・リセットする
   socket.on('stopSimulation', () => {
+    if (aiNextRoundTimer) {
+      clearTimeout(aiNextRoundTimer);
+      aiNextRoundTimer = null;
+    }
     gameState.isSimulating = false;
     gameState.isFullAISim = false;
     gameState.status = 'lobby';
@@ -563,18 +580,10 @@ io.on('connection', (socket) => {
       y: parseInt(rules.y) || 1,
       z: parseInt(rules.z) || 2
     };
-
-    // ★【バグ修正箇所】ゲーム開始時の初期化ループを安全なステステ設定のみに限定
     for (let player of gameState.players) {
-      player.hand = []; // 手札配列の初期化を明示
-      player.score = 0; // そのラウンドの獲得点初期化
-      
-      // 全員に山札から5枚配る
-      for (let i = 0; i < 5; i++) { 
-        player.hand.push(gameState.deck.pop()); 
-      }
+      player.score = 0; 
+      for (let i = 0; i < 5; i++) { player.hand.push(gameState.deck.pop()); }
     }
-
     let firstCard = gameState.deck.pop();
     while (firstCard.value === 0 || firstCard.value === 1) {
       gameState.deck.push(firstCard);
@@ -584,7 +593,6 @@ io.on('connection', (socket) => {
       }
       firstCard = gameState.deck.pop();
     }
-
     gameState.discardPile.push(firstCard);
     gameState.lastDiscardSet = [firstCard];
     gameState.status = 'playing';
