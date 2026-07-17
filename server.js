@@ -42,7 +42,7 @@ let gameState = {
   buttonIndex: 0,    
   status: 'lobby',   
   turnState: 'discard', 
-  rules: { x: 7, isAny: false, y: 1, z: 2 }, 
+  rules: { x: 7, isAny: false, y: 1, z: 2, isChaos: false }, // ★isChaosフラグを追加
   roundHistory: [],
   isSimulating: false,
   isFullAISim: false,
@@ -61,7 +61,6 @@ let simStats = {
   aiWins: { 'AI-スティーブ': 0, 'AI-アリス': 0, 'AI-ボブ': 0, 'AI-キャロル': 0 }
 };
 
-// ★【新設】AI戦の自動進行タイマーの暴走を止めるためのグローバル管理変数
 let aiNextRoundTimer = null;
 
 function createDeck() {
@@ -182,7 +181,7 @@ function autoSetRules() {
     const zOptions = [6, 7, 8, 9, 10];
     let chosenZ = zOptions[Math.floor(Math.random() * zOptions.length)];
 
-    gameState.rules = { x: chosenX, isAny: chosenAny, y: chosenY, z: chosenZ };
+    gameState.rules = { x: chosenX, isAny: chosenAny, y: chosenY, z: chosenZ, isChaos: false };
     
     const ruleLogText = chosenAny 
       ? `親の ${buttonPlayer.name} が特殊ルール [Any (いつでもヤニブOK) / 通常${chosenY}倍 / 返し${chosenZ}倍] を宣告しました！`
@@ -383,6 +382,11 @@ function executeYaniv(socketId) {
     summaryDesc = `${declarer.name} の宣言ラインを、さらに低い手札（${bestRival.rawScore}点）の ${bestRival.name} が迎撃！ペナルティ倍率が適用され、${bestRival.name} が [${reward} pt] を強奪しました。`;
   }
 
+  // カオスモードで超特大点数が出た場合のためのログ補記
+  if (gameState.rules && gameState.rules.isChaos) {
+    summaryDesc += ` (※カオスモードの確定倍率: 通常${gameState.rules.y}倍 / 返し${gameState.rules.z}倍でした！ )`;
+  }
+
   if (reward > simStats.maxPointsInRound) { simStats.maxPointsInRound = reward; }
 
   if (!gameState.isSimulating) {
@@ -427,10 +431,8 @@ function executeYaniv(socketId) {
   if (gameState.isSimulating) {
     const transitionDelay = gameState.isFullAISim ? 1200 : 3000;
     
-    // ★【バグ修正】既存タイマーがあれば念のためクリア
     if (aiNextRoundTimer) clearTimeout(aiNextRoundTimer);
 
-    // タイマーIDを変数に保持
     aiNextRoundTimer = setTimeout(() => {
       if (!gameState.isSimulating || gameState.status !== 'round_end') return;
       
@@ -459,7 +461,6 @@ function removePlayerFromGame(targetId) {
   gameState.players.splice(pIndex, 1);
 
   if (gameState.players.length === 0) {
-    // タイマー破壊
     if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     gameState.status = 'lobby';
     gameState.isSimulating = false;
@@ -527,12 +528,8 @@ io.on('connection', (socket) => {
     setTimeout(() => { autoSetRules(); }, 1000);
   });
 
-  // ★【重要バグ修正】人間からシミュレーション強制終了シグナルが来たら、次のラウンドへ進むタイマーを最優先で即座に完全破壊・リセットする
   socket.on('stopSimulation', () => {
-    if (aiNextRoundTimer) {
-      clearTimeout(aiNextRoundTimer);
-      aiNextRoundTimer = null;
-    }
+    if (aiNextRoundTimer) { clearTimeout(aiNextRoundTimer); aiNextRoundTimer = null; }
     gameState.isSimulating = false;
     gameState.isFullAISim = false;
     gameState.status = 'lobby';
@@ -574,16 +571,44 @@ io.on('connection', (socket) => {
   });
 
   socket.on('setRules', (rules) => {
-    gameState.rules = {
-      x: parseInt(rules.x) || 7,
-      isAny: !!rules.isAny,
-      y: parseInt(rules.y) || 1,
-      z: parseInt(rules.z) || 2
-    };
+    // ★カオスモードか手動入力かで数値を分岐決定する処理
+    if (rules.isChaos) {
+      let randX = 7;
+      let randAny = false;
+      if (Math.random() < (1 / 9)) {
+        randAny = true;
+      } else {
+        const xList = [3, 4, 5, 6, 7, 8, 9, 10];
+        randX = xList[Math.floor(Math.random() * xList.length)];
+      }
+      const randY = Math.floor(Math.random() * 20) + 1; // 1〜20
+      const randZ = Math.floor(Math.random() * 20) + 1; // 1〜20
+
+      gameState.rules = { x: randX, isAny: randAny, y: randY, z: randZ, isChaos: true };
+
+      // カオス発動時のチャットアナウンス
+      const announcer = gameState.players.find(p => p.id === socket.id);
+      io.emit('msgSend', { 
+        sender: "システム", 
+        text: `⚠️ 親の ${announcer ? announcer.name : '誰か'} が【カオスモード（完全ランダム）】を発動！ 宣言条件は [${randAny ? 'Any' : randX + '点以下'}] です。倍率は勝負がつくまで非表示となります！` 
+      });
+    } else {
+      // 通常の手動設定入力時
+      gameState.rules = {
+        x: parseInt(rules.x) || 7,
+        isAny: !!rules.isAny,
+        y: parseInt(rules.y) || 1,
+        z: parseInt(rules.z) || 2,
+        isChaos: false
+      };
+    }
+
     for (let player of gameState.players) {
+      player.hand = []; 
       player.score = 0; 
       for (let i = 0; i < 5; i++) { player.hand.push(gameState.deck.pop()); }
     }
+
     let firstCard = gameState.deck.pop();
     while (firstCard.value === 0 || firstCard.value === 1) {
       gameState.deck.push(firstCard);
@@ -593,6 +618,7 @@ io.on('connection', (socket) => {
       }
       firstCard = gameState.deck.pop();
     }
+
     gameState.discardPile.push(firstCard);
     gameState.lastDiscardSet = [firstCard];
     gameState.status = 'playing';

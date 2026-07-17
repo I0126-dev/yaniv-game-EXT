@@ -103,8 +103,6 @@
       border: 15px solid #5a3825; border-radius: 150px; height: 480px;
       box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 10px 20px rgba(0,0,0,0.5);
     }
-    
-    /* 🛠️ プレイヤーノードと吹き出し演出用のスタイル */
     .player-node {
       position: absolute; background: rgba(0,0,0,0.85); border: 2px solid #aaa;
       border-radius: 8px; padding: 8px 12px; text-align: center; width: 140px;
@@ -117,7 +115,6 @@
       line-height: 22px; font-size: 0.8rem; border: 1px solid black;
     }
 
-    /* 💬 【新規】チャットのリアルタイム吹き出しポップアップ */
     .chat-bubble {
       position: absolute; top: -55px; left: 80px; background: linear-gradient(135deg, #00c853, #009624);
       color: white; padding: 6px 12px; border-radius: 12px; font-size: 0.85rem; max-width: 160px;
@@ -277,8 +274,15 @@
         <label>【Z倍】ヤニブ返し倍率: </label>
         <input type="number" id="rule-z" value="2" style="width: 60px; text-align: center;"> 倍
       </div>
+      
+      <!-- ★【新機能】完全ランダムカオスボタンを追加 -->
+      <div style="margin: 20px 0; background:rgba(233,30,99,0.1); padding:12px; border-radius:8px; border:1px dashed #e91e63;">
+        <p style="font-size:0.85rem; color:#ff4081; margin:0 0 8px 0; font-weight:bold;">🎲 特殊な闇鍋ルールで遊ぶ：</p>
+        <button class="btn" onclick="submitChaosRules()" style="background:linear-gradient(135deg, #e91e63, #9c27b0); width:90%; font-size:1rem; padding:10px;">カオスモード (倍率完全隠蔽・ランダム決定)</button>
+      </div>
+
       <div style="display:flex; gap:10px; justify-content:center;">
-        <button class="btn" onclick="submitRules()" style="flex:1;">ルールを確定して配札</button>
+        <button class="btn" onclick="submitRules()" style="flex:1;">通常入力ルールで配札</button>
         <button class="btn" onclick="leavePlayer()" style="background:#555;">退出</button>
       </div>
     </div>
@@ -317,6 +321,7 @@
       <div class="main-board">
         <div style="text-align: center; margin-bottom: 10px;">
           <span class="rule-badge" id="badge-x">X(宣言): -</span>
+          <!-- ★条件に応じて display: none 制御されるようにIDを固定化 -->
           <span class="rule-badge" id="badge-y">Y(通常): -</span>
           <span class="rule-badge" id="badge-z">Z(返し): -</span>
           <span class="rule-badge" id="sim-badge" style="background:#e91e63; display:none; font-weight:bold; color:white;">🤖 SIMULATION ACTIVE</span>
@@ -383,36 +388,29 @@
 
     socket.on('connect', () => { myId = socket.id; });
     
-    // ★【新演出】チャットを受信した際、右下のログに加えて円卓上の該当プレイヤーに「吹き出しポップアップ」を発生させる
     socket.on('msgReceive', (data) => {
-      // 1. チャットログ欄への追加
       const box = document.getElementById('chat-log-box');
       const msgEl = document.createElement('div');
       msgEl.innerHTML = `<b style="color:#ffb300;">${data.sender}:</b> ${data.text}`;
       box.appendChild(msgEl);
       box.scrollTop = box.scrollHeight;
 
-      // 2. 円卓の該当プレイヤーノードを探して吹き出しを出す演出
       const canvas = document.getElementById('table-canvas');
       if (!canvas) return;
       const nodes = canvas.querySelectorAll('.player-node');
       nodes.forEach(node => {
         const nameDiv = node.querySelector('div');
         if (nameDiv && nameDiv.innerText.includes(data.sender)) {
-          // 既存の吹き出しがあれば消去
           const oldBubble = node.querySelector('.chat-bubble');
           if (oldBubble) oldBubble.remove();
 
-          // 新しい吹き出し要素を作成
           const bubble = document.createElement('div');
           bubble.className = 'chat-bubble';
           bubble.innerText = data.text;
           node.appendChild(bubble);
 
-          // わずかに遅らせてアニメーション（フェードイン・拡大）を発火
           setTimeout(() => bubble.classList.add('show'), 50);
 
-          // 4秒後にふわっと消去
           setTimeout(() => {
             bubble.classList.remove('show');
             setTimeout(() => bubble.remove(), 200);
@@ -522,8 +520,14 @@
       const x = document.getElementById('rule-x').value;
       const y = document.getElementById('rule-y').value;
       const z = document.getElementById('rule-z').value;
-      socket.emit('setRules', { x, isAny: isAnyRuleSelected, y, z });
+      socket.emit('setRules', { x, isAny: isAnyRuleSelected, y, z, isChaos: false });
     }
+
+    // ★【新機能】カオスモードのルール送信
+    function submitChaosRules() {
+      socket.emit('setRules', { isChaos: true });
+    }
+
     function nextRound() { socket.emit('nextRound'); }
 
     function updateUI() {
@@ -532,10 +536,22 @@
 
       if (!me && gameState.status !== 'lobby' && !gameState.isSimulating) { return; }
 
+      // ★【条件付き非表示ロジック修正】カオスフラグがtrueならXバッジのみ残し、YZのDOMを非表示にする
       if (gameState.rules) {
         document.getElementById('badge-x').innerText = gameState.rules.isAny ? `X(宣言): いつでもOK` : `X(宣言): ${gameState.rules.x}以下`;
-        document.getElementById('badge-y').innerText = `Y(通常): ${gameState.rules.y}倍`;
-        document.getElementById('badge-z').innerText = `Z(返し): ${gameState.rules.z}倍`;
+        
+        const yBadge = document.getElementById('badge-y');
+        const zBadge = document.getElementById('badge-z');
+        
+        if (gameState.rules.isChaos) {
+          yBadge.style.display = 'none';
+          zBadge.style.display = 'none';
+        } else {
+          yBadge.style.display = 'inline-block';
+          zBadge.style.display = 'inline-block';
+          yBadge.innerText = `Y(通常): ${gameState.rules.y}倍`;
+          zBadge.innerText = `Z(返し): ${gameState.rules.z}倍`;
+        }
       }
 
       document.getElementById('lobby').style.display = 'none';
@@ -625,16 +641,13 @@
       const myPanel = document.getElementById('my-panel');
       if (gameState.isFullAISim) { myPanel.style.display = 'none'; } else { myPanel.style.display = 'block'; }
 
-      // 1. 円卓の描画
       const canvas = document.getElementById('table-canvas');
       const oldNodes = canvas.querySelectorAll('.player-node');
       
-      // ★吹き出しアニメーション継続のため、既存ノードのテキストや状態クラスのみを綺麗に書き換える（丸ごと削除して再生成すると、表示中の吹き出しが1秒で消滅してしまうため）
       const existingNodesMap = {};
       oldNodes.forEach(n => {
         const nameDiv = n.querySelector('div');
         if (nameDiv) {
-          // 表示されている純粋な名前テキストを抽出
           const cleanName = nameDiv.innerText.replace(' 🤖', '').trim();
           existingNodesMap[cleanName] = n;
         }
@@ -652,38 +665,33 @@
           node.className = 'player-node';
           canvas.appendChild(node);
         } else {
-          delete existingNodesMap[p.name]; // 生存プレイヤー
+          delete existingNodesMap[p.name];
         }
         
-        // クラスと位置の動的更新
         node.className = `player-node ${idx === gameState.currentTurn ? 'active' : ''} ${idx === gameState.buttonIndex ? 'dealer' : ''}`;
         node.style.left = `${xPercent}%`; 
         node.style.top = `${yPercent}%`;
         
-        // 既存の吹き出しがあれば退避させて、情報欄だけを安全に更新
         const bubble = node.querySelector('.chat-bubble');
         node.innerHTML = `
           <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p.name} ${p.isAI ? '🤖' : ''}</div>
           <div style="font-size:0.8rem; color:#ffb300;">前回: ${p.score} pt</div>
           <div style="font-size:0.75rem; color:#aaa;">手札: ${p.hand ? p.hand.length : 0} 枚</div>
         `;
-        if (bubble) node.appendChild(bubble); // 退避した吹き出しを再結合
+        if (bubble) node.appendChild(bubble);
       });
 
-      // 退出してもういなくなったプレイヤーの残骸ノードを掃除
       Object.keys(existingNodesMap).forEach(k => existingNodesMap[k].remove());
 
       const activePlayer = gameState.players[gameState.currentTurn];
       const isMyTurn = (activePlayer && activePlayer.id === myId);
       const serverTurnState = gameState.turnState;
 
-      // 2. 山札の枚数描画
       const deckNode = document.getElementById('deck-node');
       deckNode.innerText = `${gameState.deck.length} 枚`;
       if (isMyTurn && serverTurnState === 'draw') { deckNode.classList.add('active-draw'); } 
       else { deckNode.classList.remove('active-draw'); }
 
-      // 3. 捨て札の描画
       const discardSetArea = document.getElementById('discard-set-area');
       discardSetArea.innerHTML = '';
       const lastSet = gameState.lastDiscardSet || [];
@@ -704,7 +712,6 @@
       });
       if (lastSet.length === 0) { discardSetArea.innerHTML = '<div style="color:#aaa; font-style:italic; padding:10px;">なし</div>'; }
 
-      // 4. 手札（カードオブジェクト）の表示
       const handDiv = document.getElementById('my-hand');
       handDiv.innerHTML = '';
       if (me && me.hand) {
@@ -730,7 +737,6 @@
         });
       }
 
-      // 5. ターンインジケーターおよびアクションボタンの制御
       const turnIndicator = document.getElementById('turn-indicator');
       const actionBtn = document.getElementById('action-btn');
       const yanivBtn = document.getElementById('yaniv-btn');
@@ -816,7 +822,6 @@
       socket.emit('discardCards', { orderedDiscardIds: selectedCardsList });
     }
 
-    // ★【バグ修正箇所】ドロー実行時に手札選択用の配列(selectedCardsList)を「確実にゼロリセット」するロジックを統合し、手番が綺麗に回るように修正
     function drawFromDeck() { if (gameState.turnState !== 'draw') return; resetTurnState(); socket.emit('drawCard', { drawSource: 'deck' }); }
     function drawFromDiscard(targetCardId) { if (gameState.turnState !== 'draw') return; resetTurnState(); socket.emit('drawCard', { drawSource: 'discard', drawCardId: targetCardId }); }
     function declareYaniv() { if (gameState.turnState !== 'discard') return; if (confirm('本当にヤニブを宣言しますか？')) { resetTurnState(); socket.emit('declareYaniv'); } }
